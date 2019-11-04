@@ -1,0 +1,24 @@
+{
+  "name": "exchange-protocol",
+  "version": "0.0.0",
+  "description": "Hypercore-extension that allows peers to exchange feed-descriptors",
+  "main": "index.js",
+  "repository": "https://github.com/decentstack/exchange-protocol.git",
+  "author": "Tony Ivanov",
+  "license": "ISC",
+  "private": false,
+  "scripts": {
+    "test": "tape test/*",
+    "debug": "node inspect $(npm bin)/tape test.js",
+    "protobuf": "protocol-buffers -o messages.js schema.proto",
+    "lint": "standard"
+  },
+  "devDependencies": {
+    "protocol-buffers": "^4.1.0",
+    "standard": "^14.3.1",
+    "tape": "^4.11.0"
+  },
+  "dependencies": {
+    "protocol-buffers-encodings": "^1.1.0"
+  }
+}

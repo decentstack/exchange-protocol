@@ -1,8 +1,9 @@
 const { Exchange } = require('./messages')
+const NAME = 'exchange'
 
 class CoreExchangeExtension {
-  constructor (handlers, opts = {}) {
-    this.name = 'exchange'
+  constructor (extHost, handlers, opts = {}) {
+    this.name = NAME
     this.encoding = Exchange
     this.requestTimeout = opts.requestTimeout || 15000
     this.handlers = {
@@ -12,6 +13,7 @@ class CoreExchangeExtension {
       onrequest (keys) {
         throw new Error('Unhandeled ReplicationRequest message')
       },
+      onerror (e) { throw e /* Warning: error handler was not supplied! */ },
       ...handlers
     }
 
@@ -23,8 +25,8 @@ class CoreExchangeExtension {
     this.requestedKeys = {}
     this.remoteOfferedKeys = {}
 
-    this.pendingRequests = {
-    }
+    this.pendingRequests = {}
+    this._ext = extHost.registerExtension(NAME, this)
   }
 
   onmessage (msg, peer) {
@@ -32,9 +34,10 @@ class CoreExchangeExtension {
       if (msg.manifest) {
         const m = {
           id: msg.manifest.id,
-          namespace: msg.manifest.namespace,
+         namespace: msg.manifest.namespace,
+          // TODO: Deprecate hexstrings in favour of Map()
           keys: msg.manifest.feeds.map(f => f.key.toString('hex')),
-          meta: msg.manifest.feeds.map(f => {
+          headers: msg.manifest.feeds.map(f => {
             const meta = {}
             f.headers.forEach(kv => {
               meta[kv.key] = JSON.parse(kv.value)
@@ -45,14 +48,17 @@ class CoreExchangeExtension {
 
         // Register what remote offered.
         this.remoteOfferedKeys[m.namespace] = this.remoteOfferedKeys[m.namespace] || []
+
         m.keys.forEach(key => {
           if (this.remoteOfferedKeys[m.namespace].indexOf(key) === -1) {
             this.remoteOfferedKeys[m.namespace].push(key)
           }
         })
-        process.nextTick(() => this.handlers.onmanifest(m, peer))
+        const accept = keys => {
+          return this.sendRequest (m.namespace, keys, m.id, peer)
+        }
+        process.nextTick(() => this.handlers.onmanifest(m, accept, peer))
       } else if (msg.req) {
-        peer.stats.requestsRecv++
         const req = msg.req
 
         // Fullfill any internal promises
@@ -64,15 +70,12 @@ class CoreExchangeExtension {
         throw new Error(`Unhandled Exchange message: ${Object.keys(msg).join(',')}`)
       }
     } catch (err) {
-      // Todo: peer#kill() refers to decentstack/peer-connection
-      // on error we proably want to disconnect or close the channel
-      // but we need to have hypercore support extensions before we know which
-      // action to take.
-      peer.kill(err)
+      this.handlers.onerror(err)
     }
   }
 
-  sendManifest (namespace, manifest, cb) {
+  sendManifest (namespace, manifest, peer = null, cb) {
+    if (typeof peer === 'function') return this.sendManifest(namespace, manifest, null, peer)
     const mid = ++this.__mctr
     // Save which keys were offered on this connection
     this.offeredKeys[namespace] = this.offeredKeys[namespace] || []
@@ -88,13 +91,14 @@ class CoreExchangeExtension {
         namespace,
         id: mid,
         feeds: manifest.keys.map((key, n) => {
-          const meta = manifest.meta[n]
+          const meta = manifest.headers[n]
+          if (typeof key === 'string') key = Buffer.from(key, 'hex')
           return {
             key: Buffer.from(key, 'hex'),
             headers: Object.keys(meta).map(k => {
               return {
                 key: k,
-                value: JSON.stringify(meta[k])
+                value: JSON.stringify(meta[k]) // TODO: turn this into a buffer
               }
             })
           }
@@ -104,26 +108,29 @@ class CoreExchangeExtension {
 
     if (typeof cb === 'function') {
       let triggered = false
+      let timerId = null
       const race = (err, f) => {
         if (!triggered) {
           triggered = true
           delete this.pendingRequests[mid]
+          clearTimeout(timerId) // cleanup pending timer
           cb(err, f)
         }
       }
 
       this.pendingRequests[mid] = race
 
-      setTimeout(() => {
+      timerId = setTimeout(() => {
         race(new ManifestResponseTimedOutError())
       }, this.requestTimeout)
     }
 
-    this.send(message)
+    // TODO: or _ext.send() if peer provided
+    this._ext.broadcast(message)
     return mid
   }
 
-  sendRequest (namespace, keys, manifestId) {
+  sendRequest (namespace, keys, manifestId, peer) {
     this.requestedKeys[namespace] = this.requestedKeys[namespace] || []
     keys.forEach(k => {
       if (this.requestedKeys[namespace].indexOf(k) === -1) {
@@ -138,7 +145,9 @@ class CoreExchangeExtension {
         keys: keys.map(k => Buffer.from(k, 'hex'))
       }
     }
-    this.send(message)
+
+    if (typeof peer !== 'undefined') this._ext.send(message, peer)
+    else this._ext.broadcast(message)
   }
 
   /*
@@ -149,17 +158,13 @@ class CoreExchangeExtension {
   }
 
   /*
-   * Each peer allows offered-keys, requested-keys and the ~~exchange-key~~
+   * Each peer allows offered-keys and requested-keys
    * to be replicated on the stream
    * negotiated = offered - requested for each namespace
    * as key value, { feedKey: namespace, ... }
    */
   get negotiatedKeysNS () {
     const m = {}
-    // Presumably not needed anymore after proto:v7 upgrade,
-    // the exchangeKey is implicitly allowed otherwise we wouldn't
-    // be exchanging any messages to begin with.
-    // m[this.exchangeChannel.key.hexSlice()] = null
 
     Object.keys(this.offeredKeys).forEach(ns => {
       this.offeredKeys[ns].forEach(k => { m[k] = ns })

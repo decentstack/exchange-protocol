@@ -15,12 +15,11 @@ message Manifest {
 message FeedDescriptor {
   required bytes key = 1;
   repeated KV headers = 2;
-
 }
 
 message KV {
   required string key = 1;
-  string value = 2;
+  bytes value = 2;
 }
 
 message RequestReplicate {
@@ -29,5 +28,9 @@ message RequestReplicate {
   uint32 manifest_id = 3;
 }
 
-
-
+message Handshake {
+  required uint32 protocol_version = 1;
+  required uint32 application_version = 2;
+  required string application_name = 3;
+  // application_data = 4;
+}

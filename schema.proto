@@ -20,6 +20,7 @@ message FeedDescriptor {
 message KV {
   required string key = 1;
   bytes value = 2;
+  uint32 valueEncoding = 3;
 }
 
 message RequestReplicate {

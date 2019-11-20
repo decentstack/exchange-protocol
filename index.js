@@ -1,6 +1,10 @@
 const { Exchange } = require('./messages')
 const NAME = 'exchange'
 
+const VALUE_ENCODING_BUFFER = 0
+const VALUE_ENCODING_JSON = 1
+const VALUE_ENCODING_UTF8 = 2
+
 class CoreExchangeExtension {
   constructor (extHost, handlers, opts = {}) {
     this.name = NAME
@@ -32,32 +36,36 @@ class CoreExchangeExtension {
   onmessage (msg, peer) {
     try {
       if (msg.manifest) {
-        const m = {
-          id: msg.manifest.id,
-         namespace: msg.manifest.namespace,
-          // TODO: Deprecate hexstrings in favour of Map()
-          keys: msg.manifest.feeds.map(f => f.key.toString('hex')),
-          headers: msg.manifest.feeds.map(f => {
-            const meta = {}
-            f.headers.forEach(kv => {
-              meta[kv.key] = JSON.parse(kv.value)
-            })
-            return meta
-          })
-        }
+        const { manifest } = msg
 
-        // Register what remote offered.
-        this.remoteOfferedKeys[m.namespace] = this.remoteOfferedKeys[m.namespace] || []
+        // Lazy init remote offer namespace
+        this.remoteOfferedKeys[manifest.namespace] = this.remoteOfferedKeys[manifest.namespace] || {}
 
-        m.keys.forEach(key => {
-          if (this.remoteOfferedKeys[m.namespace].indexOf(key) === -1) {
-            this.remoteOfferedKeys[m.namespace].push(key)
-          }
+        manifest.feeds.forEach(feed => {
+          // Register what remote offered.
+          this.remoteOfferedKeys[manifest.namespace][feed.key.toString('hex')] = true
+
+          feed.headers = feed.headers.reduce((lut, header) => {
+            switch (header.valueEncoding) {
+              case VALUE_ENCODING_UTF8:
+                lut[header.key] = header.value.toString('utf8')
+                break
+              case VALUE_ENCODING_JSON:
+                lut[header.key] = JSON.parse(header.value.toString('utf8'))
+                break
+              default:
+              case VALUE_ENCODING_BUFFER:
+                lut[header.key] = header.value
+                break
+            }
+            return lut
+          }, {})
         })
+
         const accept = keys => {
-          return this.sendRequest (m.namespace, keys, m.id, peer)
+          return this.sendRequest (manifest.namespace, keys, manifest.id, peer)
         }
-        process.nextTick(() => this.handlers.onmanifest(m, accept, peer))
+        process.nextTick(() => this.handlers.onmanifest(manifest, accept, peer))
       } else if (msg.req) {
         const req = msg.req
 
@@ -74,34 +82,39 @@ class CoreExchangeExtension {
     }
   }
 
-  sendManifest (namespace, manifest, peer = null, cb) {
-    if (typeof peer === 'function') return this.sendManifest(namespace, manifest, null, peer)
+  sendManifest (namespace, manifest, peer, cb) {
+    if (typeof peer === 'function') return this.sendManifest(namespace, manifest, undefined, peer)
     const mid = ++this.__mctr
     // Save which keys were offered on this connection
-    this.offeredKeys[namespace] = this.offeredKeys[namespace] || []
-
-    manifest.keys.forEach(k => {
-      if (this.offeredKeys[namespace].indexOf(k) === -1) {
-        this.offeredKeys[namespace].push(k)
-      }
-    })
+    this.offeredKeys[namespace] = this.offeredKeys[namespace] || {}
 
     const message = {
       manifest: {
         namespace,
         id: mid,
-        feeds: manifest.keys.map((key, n) => {
-          const meta = manifest.headers[n]
-          if (typeof key === 'string') key = Buffer.from(key, 'hex')
-          return {
-            key: Buffer.from(key, 'hex'),
-            headers: Object.keys(meta).map(k => {
-              return {
-                key: k,
-                value: JSON.stringify(meta[k]) // TODO: turn this into a buffer
-              }
-            })
-          }
+        feeds: manifest.map(feed => {
+          const strKey = feed.key.toString('hex')
+          this.offeredKeys[namespace][strKey] = 1
+
+          const arrayHeaders = []
+          Object.keys(feed.headers).forEach(key => {
+            const h = { key }
+            const v = feed.headers[key]
+
+            if (Buffer.isBuffer(v)) {
+              h.valueEncoding = VALUE_ENCODING_BUFFER
+              h.value = v
+            } else if (typeof v === 'string') {
+              h.valueEncoding = VALUE_ENCODING_UTF8
+              h.value = Buffer.from(v, 'utf8')
+            } else {
+              h.valueEncoding = VALUE_ENCODING_JSON
+              h.value = Buffer.from(JSON.stringify(v), 'utf8')
+            }
+            arrayHeaders.push(h)
+          })
+          feed.headers = arrayHeaders
+          return feed
         })
       }
     }
@@ -126,7 +139,9 @@ class CoreExchangeExtension {
     }
 
     // TODO: or _ext.send() if peer provided
-    this._ext.broadcast(message)
+    // this._ext.broadcast(message)
+    if (peer) this._ext.send(message, peer)
+    else this._ext.broadcast(message)
     return mid
   }
 
@@ -146,7 +161,7 @@ class CoreExchangeExtension {
       }
     }
 
-    if (typeof peer !== 'undefined') this._ext.send(message, peer)
+    if (peer) this._ext.send(message, peer)
     else this._ext.broadcast(message)
   }
 

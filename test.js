@@ -2,14 +2,14 @@ const test = require('tape')
 const hypercore = require('hypercore')
 const ram = require('random-access-memory')
 const { defer } = require('deferinfer')
-const Exchange = require('.')
+const exchange = require('.')
 
 test('hypercore extension', async t => {
   t.plan(14)
   let pending = 2
   try {
     const feed1 = hypercore(ram)
-    const ex1 = new Exchange(feed1, {
+    const ex1 = exchange(feed1, {
       onrequest (req) {
         t.ok('request received')
         t.equal(req.manifest_id, 1)
@@ -25,8 +25,7 @@ test('hypercore extension', async t => {
     await defer(done => feed1.append('Hello', done))
 
     const feed2 = hypercore(ram, feed1.key)
-    // TODO: this lint error will go away when extensions are self-contained.
-    new Exchange(feed2, {
+    exchange(feed2, {
       onmanifest (shared, accept) {
         t.ok('manifest received')
         t.equal(shared.namespace, 'default')
@@ -48,9 +47,9 @@ test('hypercore extension', async t => {
       { key: feed1.key, headers: { seq: feed1.length, hello: 'world' } }
     ]
 
-    feed1.once('peer-open', () => {
+    feed1.once('peer-open', peer => {
       try {
-        ex1.sendManifest('default', feeds, (err, remoteRequestedKeys) => {
+        ex1.sendManifest('default', feeds, peer, (err, remoteRequestedKeys) => {
           t.error(err, 'manifest-cb was invoked peacefully')
           // Synonymous with the ex1.onrequest handler
           t.equal(remoteRequestedKeys.length, 1)

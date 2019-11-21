@@ -45,19 +45,11 @@ var RequestReplicate = exports.RequestReplicate = {
   decode: null
 }
 
-var Handshake = exports.Handshake = {
-  buffer: true,
-  encodingLength: null,
-  encode: null,
-  decode: null
-}
-
 defineExchange()
 defineManifest()
 defineFeedDescriptor()
 defineKV()
 defineRequestReplicate()
-defineHandshake()
 
 function defineExchange () {
   var enc = [
@@ -512,95 +504,6 @@ function defineRequestReplicate () {
         case 3:
         obj.manifest_id = enc[2].decode(buf, offset)
         offset += enc[2].decode.bytes
-        break
-        default:
-        offset = skip(prefix & 7, buf, offset)
-      }
-    }
-  }
-}
-
-function defineHandshake () {
-  var enc = [
-    encodings.varint,
-    encodings.string
-  ]
-
-  Handshake.encodingLength = encodingLength
-  Handshake.encode = encode
-  Handshake.decode = decode
-
-  function encodingLength (obj) {
-    var length = 0
-    if (!defined(obj.protocol_version)) throw new Error("protocol_version is required")
-    var len = enc[0].encodingLength(obj.protocol_version)
-    length += 1 + len
-    if (!defined(obj.application_version)) throw new Error("application_version is required")
-    var len = enc[0].encodingLength(obj.application_version)
-    length += 1 + len
-    if (!defined(obj.application_name)) throw new Error("application_name is required")
-    var len = enc[1].encodingLength(obj.application_name)
-    length += 1 + len
-    return length
-  }
-
-  function encode (obj, buf, offset) {
-    if (!offset) offset = 0
-    if (!buf) buf = Buffer.allocUnsafe(encodingLength(obj))
-    var oldOffset = offset
-    if (!defined(obj.protocol_version)) throw new Error("protocol_version is required")
-    buf[offset++] = 8
-    enc[0].encode(obj.protocol_version, buf, offset)
-    offset += enc[0].encode.bytes
-    if (!defined(obj.application_version)) throw new Error("application_version is required")
-    buf[offset++] = 16
-    enc[0].encode(obj.application_version, buf, offset)
-    offset += enc[0].encode.bytes
-    if (!defined(obj.application_name)) throw new Error("application_name is required")
-    buf[offset++] = 26
-    enc[1].encode(obj.application_name, buf, offset)
-    offset += enc[1].encode.bytes
-    encode.bytes = offset - oldOffset
-    return buf
-  }
-
-  function decode (buf, offset, end) {
-    if (!offset) offset = 0
-    if (!end) end = buf.length
-    if (!(end <= buf.length && offset <= buf.length)) throw new Error("Decoded message is not valid")
-    var oldOffset = offset
-    var obj = {
-      protocol_version: 0,
-      application_version: 0,
-      application_name: ""
-    }
-    var found0 = false
-    var found1 = false
-    var found2 = false
-    while (true) {
-      if (end <= offset) {
-        if (!found0 || !found1 || !found2) throw new Error("Decoded message is not valid")
-        decode.bytes = offset - oldOffset
-        return obj
-      }
-      var prefix = varint.decode(buf, offset)
-      offset += varint.decode.bytes
-      var tag = prefix >> 3
-      switch (tag) {
-        case 1:
-        obj.protocol_version = enc[0].decode(buf, offset)
-        offset += enc[0].decode.bytes
-        found0 = true
-        break
-        case 2:
-        obj.application_version = enc[0].decode(buf, offset)
-        offset += enc[0].decode.bytes
-        found1 = true
-        break
-        case 3:
-        obj.application_name = enc[1].decode(buf, offset)
-        offset += enc[1].decode.bytes
-        found2 = true
         break
         default:
         offset = skip(prefix & 7, buf, offset)

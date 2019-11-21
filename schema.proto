@@ -28,10 +28,10 @@ message RequestReplicate {
   repeated bytes keys = 2;
   uint32 manifest_id = 3;
 }
-
+/*
 message Handshake {
   required uint32 protocol_version = 1;
   required uint32 application_version = 2;
   required string application_name = 3;
   // application_data = 4;
-}
+}*/

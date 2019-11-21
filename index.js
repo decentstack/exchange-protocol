@@ -5,8 +5,8 @@ const VALUE_ENCODING_BUFFER = 0
 const VALUE_ENCODING_JSON = 1
 const VALUE_ENCODING_UTF8 = 2
 
-class CoreExchangeExtension {
-  constructor (extHost, handlers, opts = {}) {
+class ExchangeExtension {
+  constructor (handlers, opts = {}) {
     this.name = NAME
     this.encoding = Exchange
     this.requestTimeout = opts.requestTimeout || 15000
@@ -30,7 +30,6 @@ class CoreExchangeExtension {
     this.remoteOfferedKeys = {}
 
     this.pendingRequests = {}
-    this._ext = extHost.registerExtension(NAME, this)
   }
 
   onmessage (msg, peer) {
@@ -138,10 +137,8 @@ class CoreExchangeExtension {
       }, this.requestTimeout)
     }
 
-    // TODO: or _ext.send() if peer provided
-    // this._ext.broadcast(message)
-    if (peer) this._ext.send(message, peer)
-    else this._ext.broadcast(message)
+    if (peer) this.send(message, peer)
+    else this.broadcast(message)
     return mid
   }
 
@@ -161,8 +158,8 @@ class CoreExchangeExtension {
       }
     }
 
-    if (peer) this._ext.send(message, peer)
-    else this._ext.broadcast(message)
+    if (peer) this.send(message, peer)
+    else this.broadcast(message)
   }
 
   /*
@@ -191,8 +188,6 @@ class CoreExchangeExtension {
   }
 }
 
-module.exports = CoreExchangeExtension
-
 class ManifestResponseTimedOutError extends Error {
   constructor (msg = 'timeout while waiting for request after manifest', ...params) {
     super(msg, ...params)
@@ -202,3 +197,15 @@ class ManifestResponseTimedOutError extends Error {
     this.name = this.type = 'ManifestResponseTimedOutError'
   }
 }
+
+module.exports = function HostAdapter (extensionHost, ...a) {
+  const inst = new ExchangeExtension(...a)
+  const ext = extensionHost.registerExtension(NAME, inst)
+  // This might be exclusive for hypercore/hypercore-protocol hosts
+  // we're already injecting send/broadcast in decentstack
+  inst.send = (...a) => ext.send(...a)
+  inst.broadcast = (...a) => ext.broadcast(...a)
+  return inst
+}
+
+module.exports.ExchangeExtension = ExchangeExtension

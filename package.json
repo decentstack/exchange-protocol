@@ -16,6 +16,7 @@
   "devDependencies": {
     "deferinfer": "^1.0.1",
     "hypercore": "^8.3.0",
+    "hypercore-protocol": "^7.7.0",
     "protocol-buffers": "^4.1.0",
     "random-access-memory": "^3.1.1",
     "standard": "^14.3.1",

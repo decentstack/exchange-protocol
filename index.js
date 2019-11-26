@@ -204,7 +204,13 @@ module.exports = function HostAdapter (extensionHost, ...a) {
   // This might be exclusive for hypercore/hypercore-protocol hosts
   // we're already injecting send/broadcast in decentstack
   inst.send = (...a) => ext.send(...a)
-  inst.broadcast = (...a) => ext.broadcast(...a)
+  inst.broadcast = (...a) => {
+    if (typeof ext.broadcast === 'function') {
+      ext.broadcast(...a)
+    } else {
+      ext.send(...a)
+    }
+  }
   return inst
 }
 

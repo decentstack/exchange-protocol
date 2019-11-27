@@ -14,7 +14,7 @@ Take a look at [exchange-protocol docs page](https://decentstack.org/#/exchange_
 ## Usage
 
 Given the following manifest:
-```
+```js
 // Header-values are allowed to contain primitive types or Buffers
 // if you want to use a custom encoder/decoder
 const myManifest = [
@@ -74,7 +74,7 @@ const exchangeHandlers = {
 
 Using **hypercore-protocol**
 
-```
+```js
 const Protocol = require('protocol')
 
 const stream = new Protocol(true)
@@ -93,7 +93,7 @@ const channel = stream.open(key, {
 
 Or using vanilla **hypercore**
 
-```
+```js
 const hypercore = require('hypercore')
 const ram = require('random-access-memory')
 const exchange = require('exchange-protocol')

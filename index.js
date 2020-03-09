@@ -63,7 +63,7 @@ class ExchangeExtension {
         })
 
         const accept = keys => {
-          return this.sendRequest (manifest.namespace, keys, manifest.id, peer)
+          return this.sendRequest(manifest.namespace, keys, manifest.id, peer)
         }
         process.nextTick(() => this.handlers.onmanifest(manifest, accept, peer))
       } else if (msg.req) {
@@ -93,7 +93,9 @@ class ExchangeExtension {
         namespace,
         id: mid,
         feeds: manifest.map(feed => {
-          const strKey = feed.key.toString('hex')
+          const out = { key: feed.key }
+          if (typeof out.key === 'string') out.key = Buffer.from(out.key, 'hex')
+          const strKey = out.key.toString('hex')
           this.offeredKeys[namespace][strKey] = 1
 
           const arrayHeaders = []
@@ -113,8 +115,8 @@ class ExchangeExtension {
             }
             arrayHeaders.push(h)
           })
-          feed.headers = arrayHeaders
-          return feed
+          out.headers = arrayHeaders
+          return out
         })
       }
     }
@@ -144,48 +146,37 @@ class ExchangeExtension {
   }
 
   sendRequest (namespace, keys, manifestId, peer) {
-    this.requestedKeys[namespace] = this.requestedKeys[namespace] || []
+    // TODO: I don't know if keys are normalized to either hexstring or buffers at this stage.
+    this.requestedKeys[namespace] = this.requestedKeys[namespace] || {}
     keys.forEach(k => {
-      if (this.requestedKeys[namespace].indexOf(k) === -1) {
-        this.requestedKeys[namespace].push(k)
-      }
+      if (Buffer.isBuffer(k)) k = k.toString('hex')
+      this.requestedKeys[namespace][k] = 1
     })
 
     const message = {
       req: {
         namespace,
         manifest_id: manifestId,
-        keys: keys.map(k => Buffer.from(k, 'hex'))
+        keys: keys.map(k => Buffer.isBuffer(k) ? k : Buffer.from(k, 'hex'))
       }
     }
-
     if (peer) this.send(message, peer)
     else this.broadcast(message)
   }
 
-  /*
-   * Same as negotiatedKeysNS except returns a flat array of keys
+  /* Reverse looks up the negotiated keys and tries to determine
+   * what namespace the key was either offered or requested
+   * returns undefined if provided key was neither offererd nor requested
    */
-  get negotiatedKeys () {
-    return Object.keys(this.negotiatedKeysNS)
-  }
+  namespaceFor (key) {
+    if (Buffer.isBuffer(key)) key = key.toString('hex')
+    for (const ns of Object.keys(this.offeredKeys)) {
+      if (this.offeredKeys[ns][key]) return ns
+    }
 
-  /*
-   * Each peer allows offered-keys and requested-keys
-   * to be replicated on the stream
-   * negotiated = offered - requested for each namespace
-   * as key value, { feedKey: namespace, ... }
-   */
-  get negotiatedKeysNS () {
-    const m = {}
-
-    Object.keys(this.offeredKeys).forEach(ns => {
-      this.offeredKeys[ns].forEach(k => { m[k] = ns })
-    })
-    Object.keys(this.requestedKeys).forEach(ns => {
-      this.requestedKeys[ns].forEach(k => { m[k] = ns })
-    })
-    return m
+    for (const ns of Object.keys(this.requestedKeys)) {
+      if (this.requestedKeys[ns][key]) return ns
+    }
   }
 }
 
@@ -212,6 +203,7 @@ module.exports = function HostAdapter (extensionHost, ...a) {
       ext.send(...a)
     }
   }
+
   return inst
 }
 

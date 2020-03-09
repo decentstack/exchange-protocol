@@ -1,6 +1,6 @@
 {
   "name": "exchange-protocol",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "description": "Hypercore-extension that allows peers to exchange feed-descriptors",
   "main": "index.js",
   "repository": "https://github.com/decentstack/exchange-protocol.git",
